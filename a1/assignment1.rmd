@@ -13,22 +13,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## **Conclusions:** 
 
-- Linear models were trained and tested using the airquality dataset, with Ozone as the response variable and Wind, Temp, and Solar.R as predictors.
-- The most relevant feature is a very uncommon transformation, Wind^(-1), which highlights the importance of plotting variables to get an idea of possible relationships.
-- The ANOVA tests show that using Interactions + Quadratic features results in a supperior fit than just the original features or just the interaction features.
-- From the Residual plots and Shepiro test it can be concluded that the residuals deviate significantly from normality, which violates linear regression assumptions. 
-- The VIF test showed high Multicollinearity  issues. The AIC criterion was used used to select the most relevant features. The difference in performance is not significant according to the following ANOVA test. 
-- The Durbin-Watson test showed mild positive autocorrelation in the residuals.
-- Using GLM didn't change the results from the Durbin-Watson test or the model performance.
+- The relation between Energy consumption and Temperature follows a paraboloid function which can be modeled with second order features. 
+- Basic linear regression fails to model this relation properly.  
 
 ```{r load_data}
-options(repos = c(CRAN = "https://cloud.r-project.org"))
+# options(repos = c(CRAN = "https://cloud.r-project.org"))
+# install.packages("ggplot2")
 
-library(MASS)
-library(ISLR2)
 library(car)
-library(nlme)
-library(lmtest)
+library(ggplot2)
 
 data_weather <- read.csv("consumption_20240208.csv", header = TRUE, sep = ",", fileEncoding = "latin1")
 data_weather
@@ -55,95 +48,132 @@ confint(lm.fit)
 
 Q2: On average, the consumption energy decrease when outside temperature increases.   
 
-## Predictions 
+## Predictions, Model1
 ```{r predictions_given_points}
 # Predict for new values
 new_data <- data.frame(Mean.Temp = c(-40, -20, 0, 20, 40))
-# Get predictions
 predictions <- predict(lm.fit, newdata = new_data)
-# Combine Mean.Temp and Predictions into a single dataframe
 results <- data.frame(Mean.Temp = new_data$Mean.Temp, Prediction = predictions)
-# Print the results
 print(results)
 ```
 
 ```{r plot_predictions}
-# Load ggplot2 if not already installed
-install.packages("ggplot2")
-library(ggplot2)
+# Function to plot scatter plot with regression prediction and optional prediction dots
+plot_regression <- function(data, model, x_var, y_var, pred_points = NULL) {
+  # Ensure x_var and y_var exist in data
+  if (!(x_var %in% names(data)) | !(y_var %in% names(data))) {
+    stop("The specified variables are not present in the dataset.")
+  }
+  
+  # Combine original data and prediction points to determine the full x-axis range
+  if (!is.null(pred_points)) {
+    combined_x <- c(data[[x_var]], pred_points)
+  } else {
+    combined_x <- data[[x_var]]
+  }
+  
+  # Generate a sequence of x values for a smooth curve over the combined range
+  temp_range <- data.frame(x = seq(min(combined_x, na.rm = TRUE), 
+                                   max(combined_x, na.rm = TRUE), 
+                                   length.out = 100))
+  names(temp_range) <- x_var
+  
+  # Get model predictions for the smooth curve
+  temp_range$Prediction <- predict(model, newdata = temp_range)
+  
+  # Initialize ggplot with the original data
+  p <- ggplot(data, aes_string(x = x_var, y = y_var)) + 
+    geom_point(color = "blue", alpha = 0.5) +  # Scatter plot points
+    geom_line(data = temp_range, aes_string(x = x_var, y = "Prediction"), 
+              color = "red", size = 1.2) +  # Regression line
+    labs(title = "Scatter Plot with Regression Line",
+         x = x_var,
+         y = y_var) +
+    theme_minimal()
+  
+  # If an optional prediction vector is provided, plot its predictions as dots
+  if (!is.null(pred_points)) {
+    # Create a data frame from the provided points
+    pred_df <- data.frame(x = pred_points)
+    names(pred_df) <- x_var
+    pred_df$Prediction <- predict(model, newdata = pred_df)
+    
+    # Add prediction points as green dots over the regression line
+    p <- p + geom_point(data = pred_df, 
+                        aes_string(x = x_var, y = "Prediction"), 
+                        color = "green", size = 3)
+  }
+  
+  # Adjust x-axis limits to include both original and prediction data
+  p <- p + expand_limits(x = range(combined_x, na.rm = TRUE))
+  
+  # Return the plot
+  return(p)
+}
 
-# Create scatter plot with regression line
-ggplot(data_weather, aes(x = Mean.Temp, y = Net.Consumption)) + 
-  geom_point(color = "blue") +  # Scatter plot points
-  geom_smooth(method = "lm", color = "red", se = FALSE) +  # Regression line
-  labs(title = "Scatter Plot with Regression Line",
-       x = "Mean Temperature",
-       y = "Response Variable") +
-  theme_minimal()
+plot_regression(data = data_weather, model = lm.fit, x_var = "Mean.Temp", y_var = "Net.Consumption")
 
 ```
+
 Q4: The estimates for 0C and 20C seem reasonable because the line is close to the average consuption for those temperature ranges. We are unsatisfied with the predictions for all other temperatures (-40C, -20C and 40C) which seem to be under estimations. 
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm.fit)
+```
 
 ## Interaction Terms
 ```{r interaction_terms}
-lm.fit2 <- lm(Ozone ~ Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality)
+lm.fit2 <- lm(Net.Consumption~Mean.Temp+ I(Mean.Temp^2), data=data_weather)
 summary(lm.fit2)
 ```
 
-## Non-linear Transformations of the Predictors
-```{r non_linear_transformations}
-lm.fit3 <- lm(Ozone ~ I(Temp^2) + I(Wind^-1)+Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality)
-summary(lm.fit3)
-
-lm.fit4 <- lm(Ozone ~ I(Temp^2) + I(Temp^3) + I(Temp^4) + I(Wind^-1)+I(Wind^-2)+Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality)
-summary(lm.fit4)
+## Predictions, Model2
+```{r predictions_given_points2}
+# Predict for new values
+new_data <- data.frame(Mean.Temp = c(-40, -20, 0, 20, 40))
+predictions <- predict(lm.fit2, newdata = new_data)
+results <- data.frame(Mean.Temp = new_data$Mean.Temp, Prediction = predictions)
+print(results)
 ```
-
-## Model Comparison
-```{r model_comparison}
-anova(lm.fit, lm.fit4)
-anova(lm.fit2, lm.fit4)
-anova(lm.fit3, lm.fit4)
+```{r plot_predictions2}
+plot_regression(
+  data = data_weather, 
+  model = lm.fit2, 
+  x_var = "Mean.Temp", 
+  y_var = "Net.Consumption", 
+  pred_points = c(-40,-20,0,20,40)
+  )
 ```
 
 ## Residual Plots & Q-Plots
 ```{r par_plots}
 par(mfrow = c(2, 2))
-plot(lm.fit4)
+plot(lm.fit2)
+```
+
+## Model Comparison
+```{r model_comparison}
+anova(lm.fit, lm.fit2)
 ```
 
 ## Statistical Tests 
 ```{r statistical_tests}
-shapiro.test(residuals(lm.fit4)) 
-alias(lm.fit4)
-durbinWatsonTest(lm.fit4)
-vif(lm.fit4) 
+shapiro.test(residuals(lm.fit2)) 
+alias(lm.fit2)
+durbinWatsonTest(lm.fit2)
+vif(lm.fit2) 
 ```
 
 ## Model Reduction
 ```{r model_reduction}
 library(MASS)
-lm.fit5 <- stepAIC(lm.fit4, direction = "both")
-summary(lm.fit5)
+lm.fit3 <- stepAIC(lm.fit2, direction = "both")
+summary(lm.fit3)
 
-durbinWatsonTest(lm.fit5)
-vif(lm.fit5)
-anova(lm.fit4, lm.fit5)
-```
-
-```{r generalized_least_squared}
-airquality_clean <- na.omit(airquality)
-glm_model.fit <- glm(Ozone ~ I(Temp^2) + I(Temp^3) + I(Temp^4) + I(Wind^-1)+I(Wind^-2)+Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality_clean)
-glm_model.fit2 <- stepAIC(glm_model.fit, direction="both")
-
-summary(glm_model.fit2)
-R2_gls <- 1 - (var(residuals(glm_model.fit2)) / var(airquality_clean$Ozone, na.rm = TRUE))
-cat("R square:", R2_gls)
-
-durbinWatsonTest(glm_model.fit2)
-
-par(mfrow = c(2, 2))
-plot(glm_model.fit2)
+durbinWatsonTest(lm.fit3)
+vif(lm.fit3)
+anova(lm.fit2, lm.fit3)
 ```
 
 
