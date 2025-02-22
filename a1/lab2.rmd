@@ -1,0 +1,125 @@
+---
+title: "Theoretical Machine Learning, Lab2: Linear Regression"
+author: "Cristian Del Toro"
+date: "January 30, 2025"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## **Conclusions:** 
+
+- Linear models were trained and tested using the airquality dataset, with Ozone as the response variable and Wind, Temp, and Solar.R as predictors.
+- The most relevant feature is a very uncommon transformation, Wind^(-1), which highlights the importance of plotting variables to get an idea of possible relationships.
+- The ANOVA tests show that using Interactions + Quadratic features results in a supperior fit than just the original features or just the interaction features.
+- From the Residual plots and Shepiro test it can be concluded that the residuals deviate significantly from normality, which violates linear regression assumptions. 
+- The VIF test showed high Multicollinearity  issues. The AIC criterion was used used to select the most relevant features. The difference in performance is not significant according to the following ANOVA test. 
+- The Durbin-Watson test showed mild positive autocorrelation in the residuals.
+- Using GLM didn't change the results from the Durbin-Watson test or the model performance.
+
+```{r packages}
+# cat(R.version.string)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+# install.packages("rmarkdown") # Install from terminal
+# install.packages("MASS") # Install the package if necessary
+# install.packages("ISLR2")
+# install.packages("car")
+# install.packages("lmtest", dependencies=TRUE)
+
+library(MASS)
+library(ISLR2)
+library(car)
+library(nlme)
+library(lmtest)
+```
+
+## Plots
+```{r plots, echo=FALSE}
+# par(mfrow = c(2, 2))
+plot(airquality$Wind, airquality$Ozone)
+plot(airquality$Temp, airquality$Ozone)
+plot(airquality$Solar.R, airquality$Ozone)
+```
+
+## Data
+```{r}
+data(airquality)
+head(airquality)
+cat("Dimensions:", dim(airquality))
+summary(airquality)
+
+lm.fit <- lm(Ozone~Wind+Temp+Solar.R, data=airquality)
+summary(lm.fit)
+
+names(lm.fit)
+coef(lm.fit)
+confint(lm.fit)
+```
+
+## Interaction Terms
+```{r interaction_terms}
+lm.fit2 <- lm(Ozone ~ Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality)
+summary(lm.fit2)
+```
+
+## Non-linear Transformations of the Predictors
+```{r non_linear_transformations}
+lm.fit3 <- lm(Ozone ~ I(Temp^2) + I(Wind^-1)+Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality)
+summary(lm.fit3)
+
+lm.fit4 <- lm(Ozone ~ I(Temp^2) + I(Temp^3) + I(Temp^4) + I(Wind^-1)+I(Wind^-2)+Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality)
+summary(lm.fit4)
+```
+
+## Model Comparison
+```{r model_comparison}
+anova(lm.fit, lm.fit4)
+anova(lm.fit2, lm.fit4)
+anova(lm.fit3, lm.fit4)
+```
+
+## Residual Plots & Q-Plots
+```{r par_plots}
+par(mfrow = c(2, 2))
+plot(lm.fit4)
+```
+
+## Statistical Tests 
+```{r statistical_tests}
+shapiro.test(residuals(lm.fit4)) 
+alias(lm.fit4)
+durbinWatsonTest(lm.fit4)
+vif(lm.fit4) 
+```
+
+## Model Reduction
+```{r model_reduction}
+library(MASS)
+lm.fit5 <- stepAIC(lm.fit4, direction = "both")
+summary(lm.fit5)
+
+durbinWatsonTest(lm.fit5)
+vif(lm.fit5)
+anova(lm.fit4, lm.fit5)
+```
+
+```{r generalized_least_squared}
+airquality_clean <- na.omit(airquality)
+glm_model.fit <- glm(Ozone ~ I(Temp^2) + I(Temp^3) + I(Temp^4) + I(Wind^-1)+I(Wind^-2)+Wind*Temp + Wind*Solar.R + Temp*Solar.R, data = airquality_clean)
+glm_model.fit2 <- stepAIC(glm_model.fit, direction="both")
+
+summary(glm_model.fit2)
+R2_gls <- 1 - (var(residuals(glm_model.fit2)) / var(airquality_clean$Ozone, na.rm = TRUE))
+cat("R square:", R2_gls)
+
+durbinWatsonTest(glm_model.fit2)
+
+par(mfrow = c(2, 2))
+plot(glm_model.fit2)
+```
+
+
