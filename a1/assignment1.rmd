@@ -1,0 +1,179 @@
+---
+title: "Linear Models, Assignment 1: Electricity consumption"
+author: "Cristian Del Toro, Arpon Kundu"
+date: "February 21, 2025"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## **Conclusions:** 
+
+- The relation between Energy consumption and Temperature follows a paraboloid function which can be modeled with second order features. 
+- Basic linear regression fails to model this relation properly.  
+
+```{r load_data}
+# options(repos = c(CRAN = "https://cloud.r-project.org"))
+# install.packages("ggplot2")
+
+library(car)
+library(ggplot2)
+
+data_weather <- read.csv("consumption_20240208.csv", header = TRUE, sep = ",", fileEncoding = "latin1")
+data_weather
+```
+
+Q1: We will use mean temperature.
+
+## Plots
+```{r plots, echo=FALSE}
+data_weather_numeric <- data_weather[, sapply(data_weather, is.numeric)]
+pairs(data_weather_numeric)
+cor(data_weather_numeric, use = "complete.obs")
+summary(data_weather)
+```
+
+## Data
+```{r}
+lm.fit <- lm(Net.Consumption~Mean.Temp, data=data_weather)
+summary(lm.fit)
+names(lm.fit)
+coef(lm.fit)
+confint(lm.fit)
+```
+
+Q2: On average, the consumption energy decrease when outside temperature increases.   
+
+## Predictions, Model1
+```{r predictions_given_points}
+# Predict for new values
+new_data <- data.frame(Mean.Temp = c(-40, -20, 0, 20, 40))
+predictions <- predict(lm.fit, newdata = new_data)
+results <- data.frame(Mean.Temp = new_data$Mean.Temp, Prediction = predictions)
+print(results)
+```
+
+```{r plot_predictions}
+# Function to plot scatter plot with regression prediction and optional prediction dots
+plot_regression <- function(data, model, x_var, y_var, pred_points = NULL) {
+  # Ensure x_var and y_var exist in data
+  if (!(x_var %in% names(data)) | !(y_var %in% names(data))) {
+    stop("The specified variables are not present in the dataset.")
+  }
+  
+  # Combine original data and prediction points to determine the full x-axis range
+  if (!is.null(pred_points)) {
+    combined_x <- c(data[[x_var]], pred_points)
+  } else {
+    combined_x <- data[[x_var]]
+  }
+  
+  # Generate a sequence of x values for a smooth curve over the combined range
+  temp_range <- data.frame(x = seq(min(combined_x, na.rm = TRUE), 
+                                   max(combined_x, na.rm = TRUE), 
+                                   length.out = 100))
+  names(temp_range) <- x_var
+  
+  # Get model predictions for the smooth curve
+  temp_range$Prediction <- predict(model, newdata = temp_range)
+  
+  # Initialize ggplot with the original data
+  p <- ggplot(data, aes_string(x = x_var, y = y_var)) + 
+    geom_point(color = "blue", alpha = 0.5) +  # Scatter plot points
+    geom_line(data = temp_range, aes_string(x = x_var, y = "Prediction"), 
+              color = "red", size = 1.2) +  # Regression line
+    labs(title = "Scatter Plot with Regression Line",
+         x = x_var,
+         y = y_var) +
+    theme_minimal()
+  
+  # If an optional prediction vector is provided, plot its predictions as dots
+  if (!is.null(pred_points)) {
+    # Create a data frame from the provided points
+    pred_df <- data.frame(x = pred_points)
+    names(pred_df) <- x_var
+    pred_df$Prediction <- predict(model, newdata = pred_df)
+    
+    # Add prediction points as green dots over the regression line
+    p <- p + geom_point(data = pred_df, 
+                        aes_string(x = x_var, y = "Prediction"), 
+                        color = "green", size = 3)
+  }
+  
+  # Adjust x-axis limits to include both original and prediction data
+  p <- p + expand_limits(x = range(combined_x, na.rm = TRUE))
+  
+  # Return the plot
+  return(p)
+}
+
+plot_regression(data = data_weather, model = lm.fit, x_var = "Mean.Temp", y_var = "Net.Consumption")
+
+```
+
+Q4: The estimates for 0C and 20C seem reasonable because the line is close to the average consuption for those temperature ranges. We are unsatisfied with the predictions for all other temperatures (-40C, -20C and 40C) which seem to be under estimations. 
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm.fit)
+```
+
+## Interaction Terms
+```{r interaction_terms}
+lm.fit2 <- lm(Net.Consumption~Mean.Temp+ I(Mean.Temp^2), data=data_weather)
+summary(lm.fit2)
+```
+
+## Predictions, Model2
+```{r predictions_given_points2}
+# Predict for new values
+new_data <- data.frame(Mean.Temp = c(-40, -20, 0, 20, 40))
+predictions <- predict(lm.fit2, newdata = new_data)
+results <- data.frame(Mean.Temp = new_data$Mean.Temp, Prediction = predictions)
+print(results)
+```
+```{r plot_predictions2}
+plot_regression(
+  data = data_weather, 
+  model = lm.fit2, 
+  x_var = "Mean.Temp", 
+  y_var = "Net.Consumption", 
+  pred_points = c(-40,-20,0,20,40)
+  )
+```
+
+## Residual Plots & Q-Plots
+```{r par_plots}
+par(mfrow = c(2, 2))
+plot(lm.fit2)
+```
+
+## Model Comparison
+```{r model_comparison}
+anova(lm.fit, lm.fit2)
+```
+
+## Statistical Tests 
+```{r statistical_tests}
+shapiro.test(residuals(lm.fit2)) 
+alias(lm.fit2)
+durbinWatsonTest(lm.fit2)
+vif(lm.fit2) 
+```
+
+## Model Reduction
+```{r model_reduction}
+library(MASS)
+lm.fit3 <- stepAIC(lm.fit2, direction = "both")
+summary(lm.fit3)
+
+durbinWatsonTest(lm.fit3)
+vif(lm.fit3)
+anova(lm.fit2, lm.fit3)
+```
+
+
