@@ -3,3 +3,4 @@ statsmodels
 ydata-profiling
 plotly
 nbformat
+scikit-learn
